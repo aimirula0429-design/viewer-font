@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<title>字体预览器</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0e0f12; --panel:#16181d; --panel2:#1d2026; --line:#2a2e37;
+  --txt:#e8eaed; --dim:#8b93a1; --accent:#4f8cff; --accent2:#7aa7ff;
+}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",system-ui,sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+/* ===== 顶部栏 ===== */
+.topbar{
+  display:flex; align-items:center; gap:8px;
+  padding:10px 12px; background:var(--panel);
+  border-bottom:1px solid var(--line); flex-shrink:0;
+}
+.topbar .title{font-size:14px;font-weight:600;letter-spacing:.5px;margin-right:auto}
+.btn{
+  background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+  border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer;
+  transition:.15s; white-space:nowrap;
+}
+.btn:active{transform:scale(.96)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent2)}
+/* ===== 设置面板 ===== */
+.settings{
+  background:var(--panel); border-bottom:1px solid var(--line);
+  max-height:0; overflow:hidden; transition:max-height .25s ease;
+  flex-shrink:0;
+}
+.settings.open{max-height:420px;overflow-y:auto}
+.sgrid{padding:12px;display:grid;gap:10px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.row label{font-size:12px;color:var(--dim);min-width:56px}
+input[type=range]{flex:1;min-width:110px;accent-color:var(--accent)}
+.val{font-size:12px;color:var(--accent2);min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+select,input[type=text],input[type=number]{
+  background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+  border-radius:7px; padding:6px 9px; font-size:13px; outline:none;
+}
+select:focus,input:focus{border-color:var(--accent)}
+.switch{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);cursor:pointer}
+.switch input{accent-color:var(--accent);width:16px;height:16px}
+.fontinfo{font-size:11px;color:var(--dim);padding:0 12px 10px;line-height:1.6;word-break:break-all}
+/* ===== 文本区 ===== */
+.reader{
+  flex:1; overflow-y:auto; overflow-x:hidden;
+  padding:20px 16px 80px;
+  -webkit-overflow-scrolling:touch;
+}
+#text{
+  width:100%; max-width:860px; margin:0 auto;
+  white-space:pre-wrap; word-wrap:break-word; overflow-wrap:anywhere;
+  line-height:1.9; letter-spacing:0;
+  user-select:text;
+}
+.reader.empty #text::before{
+  content:\"点击右上「导入文本」或「粘贴文本」开始\";
+  color:var(--dim); font-size:14px; font-family:system-ui,sans-serif;
+}
+/* 滚动条 */
+.reader::-webkit-scrollbar{width:6px}
+.reader::-webkit-scrollbar-thumb{background:#363b46;border-radius:3px}
+/* ===== 底部状态 ===== */
+.statusbar{
+  position:fixed; left:0; right:0; bottom:0;
+  background:rgba(22,24,29,.94); backdrop-filter:blur(12px);
+  border-top:1px solid var(--line); padding:8px 14px;
+  font-size:11px; color:var(--dim); display:flex; gap:14px;
+  font-variant-numeric:tabular-nums;
+}
+.statusbar b{color:var(--accent2);font-weight:600}
+/* ===== 模态框 ===== */
+.modal{
+  position:fixed; inset:0; background:rgba(0,0,0,.72);
+  display:none; align-items:center; justify-content:center; padding:18px; z-index:99;
+  backdrop-filter:blur(4px);
+}
+.modal.show{display:flex}
+.modal-box{
+  background:var(--panel); border:1px solid var(--line); border-radius:14px;
+  width:100%; max-width:640px; display:flex; flex-direction:column;
+  max-height:80vh; overflow:hidden;
+}
+.modal-head{
+  padding:13px 16px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; font-size:14px; font-weight:600;
+}
+.modal-head span{margin-right:auto}
+.modal-body{padding:14px 16px;overflow-y:auto}
+textarea{
+  width:100%; min-height:260px; resize:vertical;
+  background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+  border-radius:9px; padding:11px; font-size:13px; line-height:1.7;
+  outline:none; font-family:inherit;
+}
+textarea:focus{border-color:var(--accent)}
+.modal-foot{
+  padding:11px 16px; border-top:1px solid var(--line);
+  display:flex; gap:8px; justify-content:flex-end;
+}
+.hint{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.6}
+.close-x{
+  background:none;border:none;color:var(--dim);font-size:20px;
+  cursor:pointer;line-height:1;padding:0 2px;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="title">字体预览器</div>
+  <button class="btn" id="btnSettings">设置</button>
+  <button class="btn" id="btnPaste">粘贴</button>
+  <button class="btn" id="btnExport">导出</button>
+  <button class="btn primary" id="btnOpen">导入</button>
+  <input type="file" id="fileText" accept=".txt,.md,.html,.htm,.csv,.json,text/*" style="display:none">
+  <input type="file" id="fileFont" accept=".ttf,.otf,.woff,.woff2,font/*" style="display:none">
+</div>
+
+<div class="settings" id="settings">
+  <div class="sgrid">
+
+    <div class="row">
+      <label>字体</label>
+      <button class="btn" id="btnFont" style="flex:1">导入字体文件（ttf / otf / woff）</button>
+    </div>
+    <div class="row">
+      <label>系统字体</label>
+      <select id="sysFont" style="flex:1">
+        <option value="">— 选择系统字体 —</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>字号</label>
+      <input type="range" id="fontSize" min="10" max="96" value="20" step="1">
+      <span class="val" id="vSize">20px</span>
+    </div>
+
+    <div class="row">
+      <label>行高</label>
+      <input type="range" id="lineHeight" min="1" max="3" value="1.9" step="0.05">
+      <span class="val" id="vLine">1.9</span>
+    </div>
+
+    <div class="row">
+      <label>字间距</label>
+      <input type="range" id="letterSpacing" min="-2" max="10" value="0" step="0.5">
+      <span class="val" id="vSpace">0px</span>
+    </div>
+
+    <div class="row">
+      <label>字重</label>
+      <input type="range" id="fontWeight" min="100" max="900" value="400" step="100">
+      <span class="val" id="vWeight">400</span>
+    </div>
+
+    <div class="row">
+      <label>对齐</label>
+      <select id="textAlign" style="flex:1">
+        <option value="left">左对齐</option>
+        <option value="justify">两端对齐</option>
+        <option value="center">居中</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>主题</label>
+      <select id="theme" style="flex:1">
+        <option value="dark">深色</option>
+        <option value="light">浅色</option>
+        <option value="sepia">护眼棕</option>
+        <option value="paper">白纸黑字</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="autoWrap" checked> 自动换行</label>
+      <label class="switch"><input type="checkbox" id="showStatus" checked> 显示字数</label>
+    </div>
+
+    <div class="fontinfo" id="fontInfo">未导入自定义字体，当前使用系统默认字体</div>
+  </div>
+</div>
+
+<div class="reader" id="reader">
+  <div id="text"></div>
+</div>
+
+<div class="statusbar" id="statusbar">
+  <span>字数 <b id="statChars">0</b></span>
+  <span>行数 <b id="statLines">0</b></span>
+  <span id="statFontName">默认字体</span>
+</div>
+
+<div class="modal" id="modalPaste">
+  <div class="modal-box">
+    <div class="modal-head"><span>粘贴文本</span><button class="close-x" data-close="modalPaste">&times;</button></div>
+    <div class="modal-body">
+      <textarea id="pasteArea" placeholder="在这里粘贴任意长度的文本…"></textarea>
+      <div class="hint">支持任意长度，不会截断。粘贴后点「应用」。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="modalPaste">取消</button>
+      <button class="btn primary" id="btnApplyPaste">应用</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+  const reader = $('reader'), textEl = $('text');
+  const LS_KEY = 'fontviewer_state_v1';
+
+  /* ---------- 状态 ---------- */
+  const state = {
+    text: '',
+    fontFamily: '',
+    fontName: '默认字体',
+    fontSize: 20,
+    lineHeight: 1.9,
+    letterSpacing: 0,
+    fontWeight: 400,
+    align: 'left',
+    theme: 'dark',
+    autoWrap: true,
+    showStatus: true
+  };
+
+  /* ---------- 主题 ---------- */
+  const THEMES = {
+    dark:  { bg:'#0e0f12', panel:'#16181d', panel2:'#1d2026', line:'#2a2e37', txt:'#e8eaed', dim:'#8b93a1' },
+    light: { bg:'#f5f6f8', panel:'#ffffff', panel2:'#eef0f3', line:'#dcdfe5', txt:'#1a1c20', dim:'#6b7280' },
+    sepia: { bg:'#efe5d3', panel:'#f7efdf', panel2:'#e9ddc8', line:'#d6c8ae', txt:'#4a3f30', dim:'#8a7a63' },
+    paper: { bg:'#ffffff', panel:'#fafafa', panel2:'#f0f0f0', line:'#e0e0e0', txt:'#111111', dim:'#777777' }
+  };
+
+  function applyTheme(name){
+    const t = THEMES[name] || THEMES.dark;
+    const r = document.documentElement.style;
+    r.setProperty('--bg', t.bg);
+    r.setProperty('--panel', t.panel);
+    r.setProperty('--panel2', t.panel2);
+    r.setProperty('--line', t.line);
+    r.setProperty('--txt', t.txt);
+    r.setProperty('--dim', t.dim);
+    document.body.style.background = t.bg;
+    document.body.style.color = t.txt;
+  }
+
+  /* ---------- 渲染文本（全文显示，不截断） ---------- */
+  function renderText(){
+    if(!state.text){
+      reader.classList.add('empty');
+      textEl.textContent = '';
+    } else {
+      reader.classList.remove('empty');
+      textEl.textContent = state.text;   // textContent: 全部显示、不解析HTML、性能好
+    }
+    updateStats();
+  }
+
+  function updateStats(){
+    const t = state.text || '';
+    const chars = t.length;
+    const lines = t ? t.split(/\r?\n/).length : 0;
+    $('statChars').textContent = chars.toLocaleString();
+    $('statLines').textContent = lines.toLocaleString();
+    $('statFontName').textContent = state.fontName;
+    $('statusbar').style.display = state.showStatus ? 'flex' : 'none';
+  }
+
+  /* ---------- 样式应用 ---------- */
+  function applyStyle(){
+    const s = textEl.style;
+    s.fontFamily = state.fontFamily || 'inherit';
+    s.fontSize = state.fontSize + 'px';
+    s.lineHeight = state.lineHeight;
+    s.letterSpacing = state.letterSpacing + 'px';
+    s.fontWeight = state.fontWeight;
+    s.textAlign = state.align;
+    s.whiteSpace = state.autoWrap ? 'pre-wrap' : 'pre';
+    s.wordWrap = state.autoWrap ? 'break-word' : 'normal';
+    s.overflowWrap = state.autoWrap ? 'anywhere' : 'normal';
+    reader.style.overflowX = state.autoWrap ? 'hidden' : 'auto';
+
+    $('vSize').textContent = state.fontSize + 'px';
+    $('vLine').textContent = state.lineHeight;
+    $('vSpace').textContent = state.letterSpacing + 'px';
+    $('vWeight').textContent = state.fontWeight;
+  }
+
+  /* ---------- 字体导入 ---------- */
+  const loadedFonts = [];   // [{name, family}]
+
+  async function loadFontFile(file){
+    try{
+      const buf = await file.arrayBuffer();
+      const baseName = file.name.replace(/\.[^.]+$/, '');
+      const family = 'UserFont_' + Date.now();
+
+      let fontFace;
+      try{
+        fontFace = new FontFace(family, buf);
+        await fontFace.load();
+      }catch(e){
+        // 部分 woff2 需 url 方式重试
+        const blobUrl = URL.createObjectURL(file);
+        fontFace = new FontFace(family, 'url(' + blobUrl + ')');
+        await fontFace.load();
+      }
+
+      document.fonts.add(fontFace);
+      loadedFonts.push({ name: baseName, family: family });
+
+      state.fontFamily = '"' + family + '"';
+      state.fontName = baseName;
+
+      $('fontInfo').textContent = '已导入：' + baseName + '（' + (file.size/1024/1024).toFixed(2) + ' MB）';
+      applyStyle();
+      renderFontList();
+      updateStats();
+      saveState();
+      return true;
+    }catch(err){
+      $('fontInfo').textContent = '字体加载失败：' + err.message;
+      alert('字体加载失败：\n' + err.message + '\n\n建议换一个 ttf / otf 文件试试。');
+      return false;
+    }
+  }
+
+  function renderFontList(){
+    // 只做信息展示，不额外加UI
+  }
+
+  /* ---------- 文本导入 ---------- */
+  function loadTextFile(file){
+    const isTextLike = /\.(txt|md|html?|csv|json|log|js|css|xml)$/i.test(file.name)
+                    || (file.type && file.type.startsWith('text/'));
+    if(!isTextLike){
+      if(!confirm('这个文件可能不是纯文本（' + file.name + '），仍要尝试读取吗？')) return;
+    }
+    const fr = new FileReader();
+    fr.onload = () => {
+      let t = String(fr.result || '');
+      // 若误导入 HTML，去掉标签保留文字
+      if(/\.html?$/i.test(file.name)){
+        const div = document.createElement('div');
+        div.innerHTML = t;
+        t = div.innerText || div.textContent || t;
+      }
+      setText(t);
+    };
+    fr.onerror = () => alert('读取失败：' + (fr.error && fr.error.message));
+    fr.readAsText(file, 'UTF-8');
+  }
+
+  function setText(t){
+    state.text = t;
+    renderText();
+    reader.scrollTop = 0;
+    saveState();
+  }
+
+  /* ---------- 状态保存（字体除外，体积大不存） ---------- */
+  function saveState(){
+    try{
+      const s = Object.assign({}, state);
+      s.text = s.text.length > 200000 ? s.text.slice(0, 200000) : s.text; // 防超限
+      localStorage.setItem(LS_KEY, JSON.stringify(s));
+    }catch(e){}
+  }
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(!raw) return;
+      const s = JSON.parse(raw);
+      Object.assign(state, s);
+      // 字体文件不持久，重置
+      state.fontFamily = '';
+      state.fontName = s.fontName || '默认字体';
+      if(!s.fontFamily){ state.fontName = '默认字体'; }
+    }catch(e){}
+  }
+
+
+  /* ================= 导出 PNG / PDF ================= */
+
+  function getExportBg(){
+    const v = $('expBg').value;
+    if(v !== 'theme') return v;
+    const t = THEMES[state.theme] || THEMES.dark;
+    return t.bg;
+  }
+
+  function getExportPadding(){
+    return $('expPadding').checked ? 48 : 0;
+  }
+
+  function getExportWidth(){
+    return parseInt($('expWidth').value, 10) || 1080;
+  }
+
+  // 把文字画到 canvas 上（手动排版，支持超长与自定义字体）
+  async function buildCanvas(){
+    const text = state.text;
+    if(!text){ alert('还没有导入文本'); return null; }
+
+    const W = getExportWidth();
+    const pad = getExportPadding();
+    const bg = getExportBg();
+    const fg = (bg === '#000000') ? '#e8eaed'
+             : (bg === '#ffffff' ? '#111111'
+             : (bg === '#f5f0e6' ? '#3a3226' : (THEMES[state.theme]||THEMES.dark).txt));
+
+    // 字号按宽度等比缩放：以 1080 为基准
+    const scale = W / 1080;
+    const fontSize = Math.max(10, Math.round(state.fontSize * scale));
+    const lineHeightPx = Math.round(fontSize * state.lineHeight);
+    const letterSpacing = state.letterSpacing * scale;
+
+    const fontFamily = state.fontFamily || '-apple-system,"PingFang SC",sans-serif';
+    const fontSpec = state.fontWeight + ' ' + fontSize + 'px ' + fontFamily;
+
+    // 测量画布
+    const measure = document.createElement('canvas').getContext('2d');
+    measure.font = fontSpec;
+
+    const maxW = W - pad * 2;
+    const lines = [];
+
+    // 按段落拆，支持自动换行与保留换行
+    const paras = text.split(/\r?\n/);
+    for(const para of paras){
+      if(para === ''){ lines.push(''); continue; }
+      if(!state.autoWrap){
+        lines.push(para);
+        continue;
+      }
+      let cur = '';
+      for(const ch of para){
+        const test = cur + ch;
+        const w = measure.measureText(test).width + letterSpacing * test.length;
+        if(w > maxW && cur !== ''){
+          lines.push(cur);
+          cur = ch;
+        } else {
+          cur = test;
+        }
+      }
+      if(cur !== '') lines.push(cur);
+    }
+
+    const H = Math.max(lineHeightPx * lines.length + pad * 2, 200);
+
+    // 超大画布保护
+    const MAX_AREA = 268000000; // ≈16384x16384
+    if(W * H > MAX_AREA){
+      const ratio = Math.sqrt(MAX_AREA / (W * H));
+      alert('文本太长，图片尺寸超限（' + W + 'x' + H + '）。\n将自动缩小到 ' +
+            Math.floor(W*ratio) + 'x' + Math.floor(H*ratio) + ' 生成。');
+      return buildCanvasScaled(ratio);
+    }
+
+    return renderCanvas(lines, W, H, pad, fontSize, lineHeightPx, letterSpacing, fontSpec, bg, fg);
+  }
+
+  function buildCanvasScaled(ratio){
+    // 降不处理，直接提示用户降宽度
+    alert('请把「导出宽度」改成更小的值（如 750）再试。');
+    return null;
+  }
+
+  function renderCanvas(lines, W, H, pad, fontSize, lineHeightPx, letterSpacing, fontSpec, bg, fg){
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.font = fontSpec;
+    ctx.fillStyle = fg;
+    ctx.textBaseline = 'top';
+
+    const align = state.align === 'center' ? 'center'
+                : (state.align === 'justify' ? 'left' : 'left');
+    ctx.textAlign = align;
+
+    let y = pad;
+    for(const ln of lines){
+      const x = align === 'center' ? W / 2 : pad;
+      if(letterSpacing !== 0 && ln.length > 1){
+        // 手动逐字绘制实现字间距
+        let cx = x;
+        if(align === 'center'){
+          const totalW = ctx.measureText(ln).width + letterSpacing * (ln.length - 1);
+          cx = (W - totalW) / 2;
+        }
+        for(const ch of ln){
+          ctx.fillText(ch, cx, y);
+          cx += ctx.measureText(ch).width + letterSpacing;
+        }
+      } else {
+        ctx.fillText(ln, x, y);
+      }
+      y += lineHeightPx;
+    }
+    return c;
+  }
+
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  }
+
+  function stamp(){
+    const d = new Date();
+    const p = n => String(n).padStart(2,'0');
+    return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+
+  async function exportPNG(){
+    const hint = $('expHint');
+    const old = hint.textContent;
+    hint.textContent = '正在生成长图…';
+    try{
+      const c = await buildCanvas();
+      if(!c){ hint.textContent = old; return; }
+      c.toBlob(blob => {
+        if(!blob){ hint.textContent = '生成失败（图片过大，试试降低宽度）'; return; }
+        downloadBlob(blob, '文本长图_' + stamp() + '.png');
+        hint.textContent = '已导出：' + c.width + ' × ' + c.height + '（' +
+          (blob.size/1024/1024).toFixed(2) + ' MB）';
+      }, 'image/png');
+    }catch(e){
+      hint.textContent = '导出出错：' + e.message;
+    }
+  }
+
+  async function exportPDF(){
+    const hint = $('expHint');
+    hint.textContent = '正在生成 PDF…';
+    try{
+      const c = await buildCanvas();
+      if(!c){ hint.textContent = ''; return; }
+
+      // 用浏览器打印通道生成 PDF：新窗口 + 打印
+      const dataUrl = c.toDataURL('image/jpeg', 0.92);
+      const bg = getExportBg();
+      const w = c.width, h = c.height;
+
+      const win = window.open('', '_blank');
+      if(!win){
+        hint.textContent = '弹窗被拦截。请在浏览器设置里允许弹窗。';
+        return;
+      }
+      win.document.write(
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><title>导出</title>' +
+        '<style>' +
+        '@page{size:' + w + 'px ' + h + 'px;margin:0}' +
+        'html,body{margin:0;padding:0;background:' + bg + '}' +
+        'img{display:block;width:' + w + 'px;height:' + h + 'px}' +
+        '</style></head><body><img src="' + dataUrl + '"></body></html>'
+      );
+      win.document.close();
+      setTimeout(()=>{
+        try{ win.focus(); win.print(); }catch(e){}
+      }, 500);
+
+      hint.textContent = '已打开打印页。在弹窗里选「另存为 PDF」即可。';
+    }catch(e){
+      hint.textContent = '导出出错：' + e.message;
+    }
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  function bind(){
+    // 顶部按钮
+    $('btnSettings').onclick = () => $('settings').classList.toggle('open');
+    $('btnOpen').onclick = () => $('fileText').click();
+    $('btnFont').onclick = () => $('fileFont').click();
+    $('btnExport').onclick = () => $('modalExport').classList.add('show');
+    $('btnExpPng').onclick = exportPNG;
+    $('btnExpPdf').onclick = exportPDF;
+    $('btnPaste').onclick = () => {
+      $('pasteArea').value = state.text;
+      $('modalPaste').classList.add('show');
+      setTimeout(()=>$('pasteArea').focus(), 100);
+    };
+    $('btnApplyPaste').onclick = () => {
+      setText($('pasteArea').value || '');
+      $('modalPaste').classList.remove('show');
+    };
+    // 关闭模态
+    document.querySelectorAll('[data-close]').forEach(b=>{
+      b.onclick = () => $(b.dataset.close).classList.remove('show');
+    });
+    $('modalPaste').onclick = e => {
+      if(e.target.id === 'modalPaste') $('modalPaste').classList.remove('show');
+    };
+
+    // 文件选择
+    $('fileText').onchange = e => {
+      const f = e.target.files && e.target.files[0];
+      if(f) loadTextFile(f);
+      e.target.value = '';
+    };
+    $('fileFont').onchange = async e => {
+      const f = e.target.files && e.target.files[0];
+      if(f) await loadFontFile(f);
+      e.target.value = '';
+    };
+
+    // 滑块
+    $('fontSize').oninput = e => { state.fontSize = +e.target.value; applyStyle(); saveState(); };
+    $('lineHeight').oninput = e => { state.lineHeight = +e.target.value; applyStyle(); saveState(); };
+    $('letterSpacing').oninput = e => { state.letterSpacing = +e.target.value; applyStyle(); saveState(); };
+    $('fontWeight').oninput = e => { state.fontWeight = +e.target.value; applyStyle(); saveState(); };
+
+    // 下拉
+    $('textAlign').onchange = e => { state.align = e.target.value; applyStyle(); saveState(); };
+    $('theme').onchange = e => { state.theme = e.target.value; applyTheme(state.theme); saveState(); };
+    $('sysFont').onchange = e => {
+      const v = e.target.value;
+      if(!v) return;
+      state.fontFamily = v;
+      state.fontName = v;
+      applyStyle(); updateStats(); saveState();
+    };
+
+    // 开关
+    $('autoWrap').onchange = e => { state.autoWrap = e.target.checked; applyStyle(); saveState(); };
+    $('showStatus').onchange = e => { state.showStatus = e.target.checked; updateStats(); saveState(); };
+
+    // 拖拽导入
+    ['dragover','drop'].forEach(ev=>{
+      document.addEventListener(ev, e => e.preventDefault());
+    });
+    document.addEventListener('drop', e=>{
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if(!f) return;
+      if(/\.(ttf|otf|woff2?)$/i.test(f.name)) loadFontFile(f);
+      else loadTextFile(f);
+    });
+  }
+
+  /* ---------- 系统字体列表 ---------- */
+  function initSysFonts(){
+    const list = [
+      'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy',
+      '"Noto Serif CJK SC"', '"Noto Sans CJK SC"', '"Source Han Serif SC"', '"Source Han Sans SC"',
+      '"Songti SC"', '"SimSun"', '"KaiTi"', '"FangSong"', '"Microsoft YaHei"', '"PingFang SC"'
+    ];
+    const sel = $('sysFont');
+    list.forEach(f=>{
+      const o = document.createElement('option');
+      o.value = f;
+      o.textContent = f.replace(/"/g,'');
+      sel.appendChild(o);
+    });
+  }
+
+  /* ---------- 初始化 ---------- */
+  function init(){
+    loadState();
+    initSysFonts();
+    bind();
+
+    applyTheme(state.theme);
+    $('theme').value = state.theme;
+    $('fontSize').value = state.fontSize;
+    $('lineHeight').value = state.lineHeight;
+    $('letterSpacing').value = state.letterSpacing;
+    $('fontWeight').value = state.fontWeight;
+    $('textAlign').value = state.align;
+    $('autoWrap').checked = state.autoWrap;
+    $('showStatus').checked = state.showStatus;
+
+    applyStyle();
+    renderText();
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+})();
+</script>
+
+<div class="modal" id="modalExport">
+  <div class="modal-box">
+    <div class="modal-head"><span>导出</span><button class="close-x" data-close="modalExport">&times;</button></div>
+    <div class="modal-body">
+      <div class="row" style="margin-bottom:12px">
+        <label style="min-width:auto">导出宽度</label>
+        <select id="expWidth" style="flex:1">
+          <option value="1080">1080 px（手机）</option>
+          <option value="1440">1440 px（高清）</option>
+          <option value="2160">2160 px（超清）</option>
+          <option value="750">750 px（小巧）</option>
+        </select>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <label style="min-width:auto">背景</label>
+        <select id="expBg" style="flex:1">
+          <option value="theme">跟随当前主题</option>
+          <option value="#ffffff">纯白</option>
+          <option value="#000000">纯黑</option>
+          <option value="#f5f0e6">米黄</option>
+        </select>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <label class="switch"><input type="checkbox" id="expPadding" checked> 页边距 48px</label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btnExpPng" style="flex:1">导出长图 PNG</button>
+        <button class="btn" id="btnExpPdf" style="flex:1">导出 PDF</button>
+      </div>
+      <div class="hint" id="expHint">长图会按全文高度一次生成，文本越长图片越大，可能需要几秒。</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
